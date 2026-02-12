@@ -1,7 +1,7 @@
 import Table from "cli-table3";
 import { theme, getMultiplierColor } from "./colors.js";
 import type { PremiumUsageItem, PlanType } from "../types.js";
-import { getModelMultiplier, isIncludedModel } from "../models/plan-limits.js";
+import { getModelMultiplier } from "../models/plan-limits.js";
 
 export interface ModelRow {
   model: string;
@@ -19,14 +19,29 @@ export function buildModelRows(
   return usageItems
     .filter((item) => item.product === "Copilot" || item.grossQuantity > 0)
     .map((item) => {
-      const multiplier = getModelMultiplier(item.model, planType);
-      const included = isIncludedModel(item.model, planType);
+      // Use the API-provided netQuantity as the premium request count.
+      // This matches what GitHub shows on their billing page, rather than
+      // recomputing from grossQuantity * hardcoded multiplier which can drift.
+      const premiumRequests = item.netQuantity;
+      const isIncluded = item.grossQuantity > 0 && premiumRequests === 0 && item.netAmount === 0;
+
+      // Derive the effective multiplier from API data when possible,
+      // fall back to the hardcoded lookup for display purposes.
+      let multiplier: number;
+      if (isIncluded) {
+        multiplier = 0;
+      } else if (item.grossQuantity > 0) {
+        multiplier = premiumRequests / item.grossQuantity;
+      } else {
+        multiplier = getModelMultiplier(item.model, planType);
+      }
+
       return {
         model: item.model,
         requests: item.grossQuantity,
-        premiumRequests: included ? 0 : Math.ceil(item.grossQuantity * multiplier),
+        premiumRequests,
         multiplier,
-        isIncluded: included,
+        isIncluded,
         cost: item.netAmount,
       };
     })
@@ -74,9 +89,13 @@ export function renderModelTable(rows: ModelRow[]): string {
 
   for (const row of rows) {
     const multiplierColor = getMultiplierColor(row.multiplier);
+    // Format multiplier to avoid long floating-point decimals
+    const multiplierVal = Number.isInteger(row.multiplier)
+      ? `${row.multiplier}x`
+      : `${parseFloat(row.multiplier.toFixed(2))}x`;
     const multiplierStr = row.isIncluded
       ? theme.included("0x (incl)")
-      : multiplierColor(`${row.multiplier}x`);
+      : multiplierColor(multiplierVal);
 
     table.push([
       theme.label(row.model),
