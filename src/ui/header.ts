@@ -7,10 +7,12 @@ export interface HeaderOptions {
   planType: PlanType;
   year: number;
   month: number;
+  planDetected?: boolean;
+  planConfidence?: string;
 }
 
 export function renderHeader(options: HeaderOptions): string {
-  const { username, planType, year, month } = options;
+  const { username, planType, year, month, planDetected, planConfidence } = options;
   const plan = PLAN_LIMITS[planType];
 
   const monthName = new Date(year, month - 1).toLocaleString("en-US", { month: "long" });
@@ -32,9 +34,14 @@ export function renderHeader(options: HeaderOptions): string {
   lines.push(`  ${"─".repeat(50)}`);
 
   // User and plan info
-  lines.push(
-    `  ${theme.primary("@" + username)}  ${theme.muted("│")}  ${theme.label("Plan:")} ${theme.accent(plan.displayName)} ${theme.muted("(" + plan.pricePerMonth + ")")}`
-  );
+  let planLine = `  ${theme.primary("@" + username)}  ${theme.muted("│")}  ${theme.label("Plan:")} ${theme.accent(plan.displayName)} ${theme.muted("(" + plan.pricePerMonth + ")")}`;
+  if (planDetected) {
+    planLine += `  ${theme.muted("│")}  ${theme.dim("auto-detected")}`;
+    if (planConfidence && planConfidence !== "high") {
+      planLine += ` ${theme.muted("— override with")} ${theme.dim("--plan <type>")}`;
+    }
+  }
+  lines.push(planLine);
 
   // Period
   let periodStr = `  ${theme.label("Period:")} ${theme.value(monthName + " " + year)}`;

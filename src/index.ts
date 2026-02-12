@@ -4,6 +4,7 @@ import { Command } from "commander";
 import { getAuthInfo } from "./auth.js";
 import { ApiClient, ApiError } from "./api.js";
 import { getPremiumRequestUsage } from "./api/premium-usage.js";
+import { detectPlan } from "./detect-plan.js";
 import { render, renderJson } from "./ui/render.js";
 import { theme } from "./ui/colors.js";
 import type { PlanType } from "./types.js";
@@ -18,8 +19,7 @@ program
   .version("0.1.0")
   .option(
     "--plan <type>",
-    `Your Copilot plan (${VALID_PLANS.join("|")})`,
-    "pro"
+    `Override Copilot plan detection (${VALID_PLANS.join("|")})`
   )
   .option("--month <number>", "Month to query (1-12)", String(new Date().getMonth() + 1))
   .option("--year <number>", "Year to query", String(new Date().getFullYear()))
@@ -27,8 +27,8 @@ program
   .option("--no-color", "Disable colors")
   .action(async (options) => {
     try {
-      const planType = options.plan as PlanType;
-      if (!VALID_PLANS.includes(planType)) {
+      // Validate --plan if explicitly provided
+      if (options.plan !== undefined && !VALID_PLANS.includes(options.plan as PlanType)) {
         console.error(
           theme.error(`Invalid plan: ${options.plan}`) +
             `\nValid plans: ${VALID_PLANS.join(", ")}`
@@ -62,12 +62,43 @@ program
         );
       }
 
+      const client = new ApiClient({ token: auth.token });
+
+      // Detect or use provided plan
+      let planType: PlanType;
+      let planDetected = false;
+      let planConfidence: string | undefined;
+
+      if (options.plan !== undefined) {
+        planType = options.plan as PlanType;
+      } else {
+        if (!options.json) {
+          process.stdout.write(theme.muted("  Detecting Copilot plan..."));
+        }
+
+        const detection = await detectPlan(client);
+        planType = detection.planType;
+        planDetected = true;
+        planConfidence = detection.confidence;
+
+        if (!options.json) {
+          const confLabel =
+            detection.confidence === "high"
+              ? theme.success(detection.confidence)
+              : detection.confidence === "medium"
+                ? theme.warning(detection.confidence)
+                : theme.muted(detection.confidence);
+
+          process.stdout.write(
+            `\r  ${theme.success("✓")} Plan detected: ${theme.accent(planType)} ${theme.muted("(confidence: ")}${confLabel}${theme.muted(")")}\n`
+          );
+        }
+      }
+
       // Fetch usage data
       if (!options.json) {
         process.stdout.write(theme.muted("  Fetching usage data..."));
       }
-
-      const client = new ApiClient({ token: auth.token });
 
       let premiumUsage;
       try {
@@ -104,29 +135,24 @@ program
       }
 
       // Render output
-      if (options.json) {
-        console.log(
-          renderJson({
-            username: auth.username,
-            planType,
-            year,
-            month,
-            premiumUsage,
-          })
-        );
-      } else {
-        // Clear the loading lines
-        process.stdout.write("\x1b[2A\x1b[J");
+      const renderOpts = {
+        username: auth.username,
+        planType,
+        year,
+        month,
+        premiumUsage,
+        planDetected,
+        planConfidence,
+      };
 
-        console.log(
-          render({
-            username: auth.username,
-            planType,
-            year,
-            month,
-            premiumUsage,
-          })
-        );
+      if (options.json) {
+        console.log(renderJson(renderOpts));
+      } else {
+        // Clear the loading lines (auth + plan detection + usage = 2 or 3 lines)
+        const linesToClear = planDetected ? 3 : 2;
+        process.stdout.write(`\x1b[${linesToClear}A\x1b[J`);
+
+        console.log(render(renderOpts));
       }
     } catch (error: unknown) {
       if (error instanceof ApiError) {

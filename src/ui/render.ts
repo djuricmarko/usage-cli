@@ -11,16 +11,18 @@ export interface RenderOptions {
   year: number;
   month: number;
   premiumUsage: PremiumUsageResponse;
+  planDetected?: boolean;
+  planConfidence?: string;
 }
 
 export function render(options: RenderOptions): string {
-  const { username, planType, year, month, premiumUsage } = options;
+  const { username, planType, year, month, premiumUsage, planDetected, planConfidence } = options;
   const plan = PLAN_LIMITS[planType];
 
   const lines: string[] = [];
 
   // Header
-  lines.push(renderHeader({ username, planType, year, month }));
+  lines.push(renderHeader({ username, planType, year, month, planDetected, planConfidence }));
 
   // Build model rows
   const modelRows = buildModelRows(premiumUsage.usageItems, planType);
@@ -91,7 +93,7 @@ export function render(options: RenderOptions): string {
 }
 
 export function renderJson(options: RenderOptions): string {
-  const { planType, premiumUsage } = options;
+  const { planType, premiumUsage, planDetected, planConfidence } = options;
   const plan = PLAN_LIMITS[planType];
   const modelRows = buildModelRows(premiumUsage.usageItems, planType);
   const totalPremiumRequests = modelRows.reduce((sum, r) => sum + r.premiumRequests, 0);
@@ -102,6 +104,8 @@ export function renderJson(options: RenderOptions): string {
         type: planType,
         name: plan.displayName,
         monthlyAllowance: plan.monthlyPremiumRequests,
+        ...(planDetected !== undefined && { detected: planDetected }),
+        ...(planConfidence !== undefined && { confidence: planConfidence }),
       },
       usage: {
         totalPremiumRequests,

@@ -9,7 +9,7 @@ Authenticates via the GitHub CLI (`gh`), fetches your personal billing data from
 ```
   GitHub Copilot Usage
   ──────────────────────────────────────────────────
-  @username  |  Plan: Copilot Pro ($10)
+  @username  |  Plan: Copilot Pro ($10)  |  auto-detected
   Period: February 2026  |  Resets Mar 1, 2026 (17 days)
 
   Premium Requests  187 / 300 used
@@ -39,6 +39,7 @@ Authenticates via the GitHub CLI (`gh`), fetches your personal billing data from
 - **Color-coded progress bar** -- green when under 50%, yellow at 50-80%, red above 80%
 - **Per-model breakdown** with multiplier and premium request calculations
 - **All Copilot plans** supported (Free, Pro, Pro+, Business, Enterprise)
+- **Auto-detects your Copilot plan** -- no `--plan` flag needed in most cases
 - **Proactive scope validation** -- detects missing `user` token scope before hitting the API
 - **JSON output mode** for scripting and piping (`--json`)
 - **Historical queries** -- look up any past month's usage
@@ -106,7 +107,7 @@ usage-cli [options]
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--plan <type>` | Copilot plan: `free`, `pro`, `pro-plus`, `business`, `enterprise` | `pro` |
+| `--plan <type>` | Override plan detection: `free`, `pro`, `pro-plus`, `business`, `enterprise` | Auto-detected |
 | `--month <n>` | Month to query (1-12) | Current month |
 | `--year <n>` | Year to query | Current year |
 | `--json` | Output raw JSON instead of the formatted dashboard | Off |
@@ -117,10 +118,10 @@ usage-cli [options]
 ### Examples
 
 ```bash
-# Show current month usage (defaults to Pro plan)
+# Show current month usage (plan is auto-detected)
 usage-cli
 
-# Specify your plan
+# Override the detected plan
 usage-cli --plan pro-plus
 usage-cli --plan free
 
@@ -134,6 +135,23 @@ usage-cli --json | jq '.usage.percentUsed'
 # Pipe-friendly: disable colors
 usage-cli --no-color
 ```
+
+## Plan Auto-Detection
+
+When you run `usage-cli` without the `--plan` flag, it automatically detects your Copilot plan:
+
+1. **Billing data analysis** -- checks your premium request discount quantities against known plan allowances (50 for Free, 300 for Pro, 1500 for Pro+)
+2. **GitHub account plan** -- falls back to `GET /user` to check if you're on a Free or Pro GitHub account
+
+The detection reports a confidence level:
+
+| Confidence | Meaning |
+|------------|---------|
+| **high** | Billing data confirms the plan (e.g., discount quantity exceeds a lower tier's limit) |
+| **medium** | Inferred from GitHub account plan (usually correct but not definitive) |
+| **low** | Could not determine; defaulted to Pro |
+
+If detection is wrong, override it with `--plan <type>`.
 
 ## Plan Reference
 
@@ -204,9 +222,10 @@ Each model has a multiplier that determines how many premium requests a single u
 
 1. **Auth** -- Runs `gh auth token` to obtain your OAuth token. Parses `gh auth status` to validate the `user` scope is present.
 2. **User lookup** -- Calls `GET /user` to resolve the authenticated GitHub username.
-3. **Billing API** -- Calls `GET /users/{username}/settings/billing/premium_request/usage` with `year` and `month` query parameters to fetch premium request usage for the billing period.
-4. **Data transform** -- Maps each usage item's model name to its known multiplier, calculates premium request consumption (`raw requests x multiplier`), and identifies included models that cost 0 premium requests on paid plans.
-5. **Render** -- Builds the terminal dashboard: styled header, color-coded progress bar, model breakdown table with totals, and footer notes with reset date and cost information.
+3. **Plan detection** -- Analyzes billing discount quantities and GitHub account plan to auto-detect your Copilot tier (or uses `--plan` override).
+4. **Billing API** -- Calls `GET /users/{username}/settings/billing/premium_request/usage` with `year` and `month` query parameters to fetch premium request usage for the billing period.
+5. **Data transform** -- Maps each usage item's model name to its known multiplier, calculates premium request consumption (`raw requests x multiplier`), and identifies included models that cost 0 premium requests on paid plans.
+6. **Render** -- Builds the terminal dashboard: styled header, color-coded progress bar, model breakdown table with totals, and footer notes with reset date and cost information.
 
 The tool uses the [GitHub Billing Usage API](https://docs.github.com/en/rest/billing/usage), specifically the premium request usage endpoint for individual users.
 
@@ -223,6 +242,7 @@ usage-cli/
     auth.ts                 GitHub CLI auth and token scope validation
     api.ts                  Generic API client with typed error handling
     types.ts                TypeScript types for all API responses
+    detect-plan.ts          Auto-detection of Copilot plan type
     api/
       premium-usage.ts      Premium request usage endpoint
       usage-summary.ts      Usage summary endpoint (extensible)
