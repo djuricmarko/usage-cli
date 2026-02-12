@@ -19,11 +19,13 @@ export function buildModelRows(
   return usageItems
     .filter((item) => item.product === "Copilot" || item.grossQuantity > 0)
     .map((item) => {
-      // Use the API-provided netQuantity as the premium request count.
-      // This matches what GitHub shows on their billing page, rather than
-      // recomputing from grossQuantity * hardcoded multiplier which can drift.
-      const premiumRequests = item.netQuantity;
-      const isIncluded = item.grossQuantity > 0 && premiumRequests === 0 && item.netAmount === 0;
+      // Use API-provided billing data to derive the total premium request count.
+      // discountQuantity = requests covered by the plan's monthly allowance
+      // netQuantity = billable overage beyond the allowance
+      // Their sum is the total premium requests consumed, matching GitHub's billing page.
+      // This avoids recomputing from grossQuantity * hardcoded multiplier which can drift.
+      const premiumRequests = item.discountQuantity + item.netQuantity;
+      const isIncluded = item.grossQuantity > 0 && premiumRequests === 0;
 
       // Derive the effective multiplier from API data when possible,
       // fall back to the hardcoded lookup for display purposes.
